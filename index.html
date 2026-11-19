@@ -33,6 +33,8 @@ a{color:var(--accent)}
 /* ---------- 패널 ---------- */
 #panel{width:380px;flex:none;height:100%;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:1000;position:relative}
 #grab{display:none}
+#pcol{position:absolute;z-index:1001;left:380px;top:50%;transform:translateY(-50%);width:22px;height:60px;border:1px solid var(--line);border-left:none;background:#fff;border-radius:0 10px 10px 0;box-shadow:2px 0 6px rgba(0,0,0,.08);font-size:15px;color:var(--muted);padding:0;transition:left .2s ease}
+@media (min-width:768px){#panel{transition:width .2s ease;overflow:hidden}#app.collapsed #panel>*{visibility:hidden}#app.collapsed #panel{width:0;border-right:none}#app.collapsed #pcol{left:0}}
 .ph{padding:18px 18px 8px}
 .ph h1{font-size:20px;margin:0;font-weight:800;letter-spacing:-.4px}
 .ph p{margin:3px 0 0;color:var(--muted);font-size:12.5px}
@@ -138,6 +140,7 @@ details li{font-size:13px;line-height:1.65}
 .legend button.on{background:var(--accent-soft);font-weight:700}
 .legend i{width:18px;height:5px;border-radius:3px;flex:none}
 #hlbar{position:absolute;z-index:900;left:50%;transform:translateX(-50%);top:var(--top);background:#17201d;color:#fff;border:none;border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:700;box-shadow:var(--shadow);white-space:nowrap}
+#areabtn{position:absolute;z-index:905;left:50%;transform:translateX(-50%);top:calc(var(--top) + 48px);background:#fff;color:var(--accent);border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-size:13px;font-weight:700;box-shadow:var(--shadow);white-space:nowrap}
 #toast{position:fixed;left:50%;bottom:calc(var(--sheet) + 24px);transform:translateX(-50%);background:#17201d;color:#fff;padding:9px 14px;border-radius:10px;font-size:13px;z-index:3000;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
 #toast.on{opacity:1}
 
@@ -173,6 +176,7 @@ details li{font-size:13px;line-height:1.65}
   #mapwrap{position:fixed;inset:0}
   #panel{position:fixed;left:0;right:0;bottom:0;width:auto;height:88px;border-right:none;border-radius:18px 18px 0 0;box-shadow:0 -4px 20px rgba(0,0,0,.18);transition:height .22s ease}
   #panel.dragging{transition:none}
+  #pcol{display:none}
   #grab{display:flex;justify-content:center;align-items:center;height:24px;border:none;background:none;width:100%;touch-action:none;flex:none}
   #grab span{width:42px;height:5px;border-radius:3px;background:#c9cfcb}
   .ph{display:none}
@@ -192,6 +196,8 @@ details li{font-size:13px;line-height:1.65}
   body.sheet-full .fab2{display:none}
   #pop{position:fixed;z-index:1200;left:10px;right:10px;width:auto;top:calc(var(--top) + 56px);max-height:calc(100dvh - var(--sheet) - var(--top) - 70px)}
   #hlbar{top:calc(var(--top) + 58px)}
+  #areabtn{position:fixed;top:calc(var(--top) + 58px)}
+  body:has(#hlbar:not([hidden])) #areabtn{top:calc(var(--top) + 100px)}
   .leaflet-control-zoom,.leaflet-control-scale{display:none}
   .pinlab{font-size:10.5px}
   .leaflet-bottom{bottom:var(--sheet)}
@@ -228,9 +234,11 @@ details li{font-size:13px;line-height:1.65}
     <div class="body" id="v-card" hidden></div>
   </aside>
 
+  <button id="pcol" aria-label="왼쪽 패널 접기" title="패널 접기">‹</button>
   <main id="mapwrap">
     <div id="map" aria-label="지도"></div>
     <button id="hlbar" hidden></button>
+    <button id="areabtn" hidden>↻ 이 지역에서 다시 검색</button>
     <div class="fab">
       <button class="fbtn" id="b-set" aria-expanded="false" aria-controls="pop" aria-label="지도 설정">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>지도 설정</button>
@@ -255,7 +263,7 @@ details li{font-size:13px;line-height:1.65}
       <div class="grp slider"><div class="top"><span>노선 선명도</span><span id="opv">75%</span></div>
         <input type="range" id="r-op" min="10" max="100" step="5" value="75" aria-label="노선 선명도">
         <div class="ends"><span>흐리게</span><span>진하게</span></div></div>
-      <div class="grp" style="margin-bottom:0"><h4>노선 하나만 보기 (누르면 강조)</h4><div class="legend" id="legend"></div></div>
+      <div class="grp" style="margin-bottom:0"><h4>노선 골라 보기 (여러 개 선택 가능)</h4><div class="legend" id="legend"></div></div>
     </div>
   </main>
 </div>
@@ -391,7 +399,8 @@ function dist(a,b){const R=6371000,t=Math.PI/180;const x=(b[1]-a[1])*t*Math.cos(
 map.createPane('lines');map.getPane('lines').style.zIndex=410;
 map.createPane('stations');map.getPane('stations').style.zIndex=420;
 const lineR=L.canvas({pane:'lines',padding:.3,tolerance:matchMedia('(max-width:767px)').matches?14:7}),stR=lineR; /* 한 캔버스에 같이 그려야 노선 터치가 됨 */
-const lineLayer=L.layerGroup().addTo(map);const polys=[];let hl=null;
+const lineLayer=L.layerGroup().addTo(map);const polys=[];let hl=null;const HL=new Set(); /* 선택한 노선들 (겹친 곳 누르면 여러 개) */
+const isOn=l=>!HL.size||HL.has(l);
 const groups={};D.segs.forEach(s=>{const k=JSON.stringify(s.c);(groups[k]=groups[k]||[]).push(s.l)});
 const order=Object.keys(COL);
 function lineW(){const z=map.getZoom();return isPhone()?(z>=17?4.5:z>=15?3.5:z>=13?2.6:z>=11?2:1.5):(z>=17?6.5:z>=15?5:z>=13?3.6:z>=11?2.8:2);}
@@ -399,19 +408,23 @@ function lineW(){const z=map.getZoom();return isPhone()?(z>=17?4.5:z>=15?3.5:z>=
 function thin(c,minM){const out=[c[0]];for(let i=1;i<c.length-1;i++){if(dist(out[out.length-1],c[i])>=minM)out.push(c[i]);}const last=c[c.length-1];if(out.length>1&&dist(out[out.length-1],last)<minM*0.5)out.pop();out.push(last);return out;}
 Object.entries(groups).forEach(([k,ls])=>{const c=thin(JSON.parse(k),45);if(c.length<2||(c[0][0]===c[1][0]&&c[0][1]===c[1][1]))return;ls=[...new Set(ls)].sort((a,b)=>order.indexOf(a)-order.indexOf(b));
  ls.forEach((l,i)=>{const p=L.polyline(c,{pane:'lines',renderer:lineR,color:COL[l],weight:lineW(),offset:(i-(ls.length-1)/2)*lineW(),lineCap:'butt',lineJoin:'round'});p._ln=l;p._i=i;p._n=ls.length;
-  p.on('click',e=>{L.DomEvent.stop(e);highlight(hl===l?null:l);});p.addTo(lineLayer);polys.push(p);});});
+  p.on('click',e=>{L.DomEvent.stop(e);lineTap(e,l);});p.on('dblclick',e=>L.DomEvent.stop(e));p.addTo(lineLayer);polys.push(p);});});
+/* 노선을 누르면: 그 지점에 겹친 노선을 모두 선택. 이미 선택된 노선을 다시 누르면 전체 보기로 */
+function lineTap(e,l){if(HL.size&&HL.has(l)){setHL([]);return;}const pt=e.layerPoint;const hit=new Set();polys.forEach(q=>{if(q._parts&&q._parts.length&&q._containsPoint(pt))hit.add(q._ln);});hit.add(l);setHL([...hit]);}
 let lastSty='';
 function styleAll(force){const v=+$('#r-op').value,w=lineW(),key=v+'|'+w+'|'+hl;$('#opv').textContent=v+'%';if(!force&&key===lastSty)return;const wChanged=!lastSty||lastSty.split('|')[1]!=String(w);lastSty=key;
- polys.forEach(p=>{const on=!hl||p._ln===hl;p.options.interactive=on;p.setStyle({opacity:hl?(on?1:0):v/100,weight:p._ln===hl?w+1.5:w});if(wChanged)p.setOffset((p._i-(p._n-1)/2)*w);});
- stMarks.forEach(m=>{const on=!hl||m._lines.includes(hl);m.options.interactive=on;m.setStyle({opacity:on?1:0,fillOpacity:on?1:0});});}
+ polys.forEach(p=>{const on=isOn(p._ln);p.options.interactive=on;p.setStyle({opacity:HL.size?(on?1:0):v/100,weight:HL.size&&on?w+1.5:w});if(wChanged)p.setOffset((p._i-(p._n-1)/2)*w);});
+ stMarks.forEach(m=>{const on=!HL.size||m._lines.some(x=>HL.has(x));m.options.interactive=on;m.setStyle({opacity:on?1:0,fillOpacity:on?1:0});});}
 function applyOp(){styleAll();}
 function restyle(){styleAll();}
-function highlight(l){hl=l;const b=$('#hlbar');b.hidden=!l;if(l)b.textContent=`${SHORT[l]||l} 노선만 보는 중 · 모두 보기 ✕`;
- document.querySelectorAll('#legend button').forEach(x=>x.classList.toggle('on',x.dataset.l===l));restyle();drawStLabels();}
+function setHL(arr){HL.clear();arr.forEach(x=>HL.add(x));hl=HL.size?[...HL].sort().join(','):null;const b=$('#hlbar');b.hidden=!HL.size;
+ if(HL.size)b.textContent=`${[...HL].map(x=>SHORT[x]||x).join(' · ')} 노선만 보는 중 · 모두 보기 ✕`;
+ document.querySelectorAll('#legend button').forEach(x=>x.classList.toggle('on',HL.has(x.dataset.l)));restyle();drawStLabels();}
+function highlight(l){setHL(l?[l]:[]);}
 $('#hlbar').onclick=()=>highlight(null);
 $('#r-op').oninput=applyOp;
 $('#legend').innerHTML=Object.entries(COL).map(([k,c])=>`<button data-l="${esc(k)}"><i style="background:${c}"></i>${esc(SHORT[k]||k)}</button>`).join('');
-$('#legend').onclick=e=>{const b=e.target.closest('button');if(b)highlight(hl===b.dataset.l?null:b.dataset.l);};
+$('#legend').onclick=e=>{const b=e.target.closest('button');if(!b)return;const l=b.dataset.l;const a=[...HL];setHL(HL.has(l)?a.filter(x=>x!==l):[...a,l]);};
 
 /* 역 */
 const stLayer=L.layerGroup().addTo(map);const STN={};const stMarks=[];
@@ -419,10 +432,10 @@ D.st.forEach(s=>{if(!STN[s.n])STN[s.n]={n:s.n,p:s.p,l:new Set()};s.l.forEach(x=>
 const STATIONS=Object.values(STN).map(s=>({...s,l:[...s.l]}));
 const lineTxt=l=>`<span style="color:${l==='Circle'?'#a88a00':COL[l]};font-weight:700">${esc(SHORT[l]||l)}</span>`;
 STATIONS.forEach(s=>{const m=L.circleMarker(s.p,{pane:'lines',renderer:stR,radius:3.4,color:'#3a3f3c',weight:1.4,fillColor:'#fff',fillOpacity:1})
- .bindPopup(()=>card({title:s.n+' 역',kind:s.l.map(lineTxt).join(' · '),ll:s.p,near:false,save:s.n+' 역'})).addTo(stLayer);m._lines=s.l;stMarks.push(m);});
+ .on('dblclick',e=>L.DomEvent.stop(e)).bindPopup(()=>card({title:s.n+' 역',kind:s.l.map(lineTxt).join(' · '),ll:s.p,near:false,save:s.n+' 역'})).addTo(stLayer);m._lines=s.l;stMarks.push(m);});
 const stLab=L.layerGroup().addTo(map);
 function drawStLabels(){stLab.clearLayers();if(map.getZoom()<15||!map.hasLayer(stLayer))return;const b=map.getBounds().pad(.1);
- STATIONS.forEach(s=>{if(b.contains(s.p)&&(!hl||s.l.includes(hl)))L.marker(s.p,{interactive:false,keyboard:false,icon:L.divIcon({className:'',iconSize:[0,0],html:`<div class="st-tip">${esc(s.n)}</div>`})}).addTo(stLab);});}
+ STATIONS.forEach(s=>{if(b.contains(s.p)&&(!HL.size||s.l.some(x=>HL.has(x))))L.marker(s.p,{interactive:false,keyboard:false,icon:L.divIcon({className:'',iconSize:[0,0],html:`<div class="st-tip">${esc(s.n)}</div>`})}).addTo(stLab);});}
 map.on('moveend',drawStLabels);
 
 /* ===== 가까운 역 ===== */
@@ -527,7 +540,7 @@ const searchLayer=L.layerGroup().addTo(map);let lastQ=0,lastRes=[];
 $('#q').addEventListener('input',()=>{$('#qclr').hidden=!$('#q').value;});
 $('#q').addEventListener('focus',()=>{closePop();if(lastRes.length)$('#results').hidden=false;});
 $('#qclr').onclick=()=>{$('#q').value='';$('#qclr').hidden=true;clearSearch();};
-function clearSearch(){$('#results').hidden=true;$('#results').innerHTML='';searchLayer.clearLayers();lastRes=[];}
+function clearSearch(){$('#results').hidden=true;$('#results').innerHTML='';searchLayer.clearLayers();lastRes=[];lastText='';searchCenter=null;$('#areabtn').hidden=true;}
 /* 한국어 → 영어 바꾸기 (호텔 브랜드·런던 지명·주소 단어) */
 const KO_EN=[['시티 오브 런던','City of London'],['타워햄리츠','Tower Hamlets'],['타워 햄리츠','Tower Hamlets'],['웨스트민스터','Westminster'],['켄싱턴 앤 첼시','Kensington and Chelsea'],['캠든','Camden'],['서더크','Southwark'],['사우스워크','Southwark'],['램버스','Lambeth'],['켄싱턴','Kensington'],['첼시','Chelsea'],['이즐링턴','Islington'],['해크니','Hackney'],
  ['킹스크로스','Kings Cross'],['킹스 크로스','Kings Cross'],['세인트 판크라스','St Pancras'],['세인트판크라스','St Pancras'],['패딩턴','Paddington'],['빅토리아','Victoria'],['워털루','Waterloo'],['유스턴','Euston'],['리버풀 스트리트','Liverpool Street'],['런던 브리지','London Bridge'],['런던브리지','London Bridge'],['타워 브리지','Tower Bridge'],['타워브리지','Tower Bridge'],['타워힐','Tower Hill'],['타워 힐','Tower Hill'],['카나리 워프','Canary Wharf'],['카나리워프','Canary Wharf'],['쇼디치','Shoreditch'],['소호','Soho'],['코벤트 가든','Covent Garden'],['코벤트가든','Covent Garden'],['블룸즈버리','Bloomsbury'],['메릴본','Marylebone'],['마릴본','Marylebone'],['베이커 스트리트','Baker Street'],['옥스퍼드 스트리트','Oxford Street'],['옥스포드','Oxford'],['옥스퍼드','Oxford'],['하이드 파크','Hyde Park'],['사우스뱅크','South Bank'],['사우스 뱅크','South Bank'],['그리니치','Greenwich'],['스트랫퍼드','Stratford'],['얼스코트','Earls Court'],['얼스 코트','Earls Court'],['해머스미스','Hammersmith'],['노팅힐','Notting Hill'],['노팅 힐','Notting Hill'],['베이스워터','Bayswater'],['나이츠브리지','Knightsbridge'],['카운티 홀','County Hall'],['카운티홀','County Hall'],['히드로','Heathrow'],['피카딜리','Piccadilly'],['레스터 스퀘어','Leicester Square'],['트래펄가','Trafalgar'],['홀본','Holborn'],['알드게이트','Aldgate'],['와핑','Wapping'],['버몬지','Bermondsey'],['엘리펀트 앤 캐슬','Elephant and Castle'],
@@ -544,50 +557,57 @@ function toEnglish(q){let s=' '+q.replace(/[，、]/g,',')+' ';
 const PC_RE=/\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b/i;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 let nomiNext=0;
-async function nominatim(q){const w=nomiNext-Date.now();if(w>0)await sleep(w);nomiNext=Date.now()+1100;
- const u='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=gb&bounded=1&accept-language=en&viewbox=-1.4,51.85,0.35,51.3&q='+encodeURIComponent(q);
+const DEF_BOX=[-1.4,51.3,0.35,51.85]; /* 서,남,동,북 */
+async function nominatim(q,box=DEF_BOX){const w=nomiNext-Date.now();if(w>0)await sleep(w);nomiNext=Date.now()+1100;
+ const u='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=gb&bounded=1&accept-language=en&viewbox='+[box[0],box[3],box[2],box[1]].join(',')+'&q='+encodeURIComponent(q);
  const js=await (await fetch(u,{headers:{'Accept':'application/json'}})).json();
  return js.map(x=>({name:x.name||x.display_name.split(',')[0],addr:x.display_name.split(',').slice(1,4).join(',').trim(),lat:+x.lat,lng:+x.lon}));}
-async function photon(q){const u='https://photon.komoot.io/api/?limit=6&lang=en&lat=51.507&lon=-0.12&bbox=-1.4,51.3,0.35,51.85&q='+encodeURIComponent(q);
+async function photon(q,box=DEF_BOX){const u='https://photon.komoot.io/api/?limit=8&lang=en&lat='+((box[1]+box[3])/2)+'&lon='+((box[0]+box[2])/2)+'&bbox='+box.join(',')+'&q='+encodeURIComponent(q);
  const js=await (await fetch(u)).json();
  return (js.features||[]).map(f=>{const p=f.properties;const street=[p.housenumber,p.street].filter(Boolean).join(' ');
   return {name:p.name||street||p.postcode||q,addr:[p.name?street:'',p.postcode,p.city||p.district].filter(Boolean).join(', '),lat:f.geometry.coordinates[1],lng:f.geometry.coordinates[0]};});}
 async function postcode(pc){const r=await (await fetch('https://api.postcodes.io/postcodes/'+encodeURIComponent(pc))).json();
  return r&&r.result?[{name:'우편번호 '+r.result.postcode,addr:[r.result.admin_district,'London'].filter(Boolean).join(', '),lat:r.result.latitude,lng:r.result.longitude}]:[];}
 const safe=p=>p.catch(()=>[]);
-async function smartSearch(q){
+async function smartSearch(q,box){const B=box||DEF_BOX;const inBox=x=>x.lng>=B[0]&&x.lng<=B[2]&&x.lat>=B[1]&&x.lat<=B[3];
  const en=toEnglish(q)||q;const pcm=en.match(PC_RE)||q.match(PC_RE);const pc=pcm?(pcm[1]+' '+pcm[2]).toUpperCase():null;
  const v1=en.replace(/,?\s*United Kingdom\b/i,'').trim();
  const v2=v1.replace(/\s+by\s+.+$/i,'').trim();
  const street=pc?v1.split(',')[0].trim():'';
- const pPh=Promise.all([safe(photon(v1)),v2!==v1?safe(photon(v2)):[] ,pc?safe(postcode(pc)):[]]);
- let nomi=[];for(const v of [...new Set([v1,v2,pc&&street&&street!==pc?street+', '+pc:null].filter(Boolean))]){nomi=await safe(nominatim(v));if(nomi.length)break;}
+ const pPh=Promise.all([safe(photon(v1,B)),v2!==v1?safe(photon(v2,B)):[] ,pc&&!box?safe(postcode(pc)):[]]);
+ let nomi=[];for(const v of [...new Set([v1,v2,pc&&street&&street!==pc?street+', '+pc:null].filter(Boolean))]){nomi=await safe(nominatim(v,B));if(nomi.length)break;}
  const [ph1,ph2,pcr]=await pPh;
  /* 지도 데이터에 브랜드명이 빠진 호텔 보완 (예: The Tower Hotel, by Thistle) */
  const extra=[];for(const [brand,items] of Object.entries(BRAND_EXTRA))if(new RegExp('\\b'+brand+'\\b','i').test(en))items.forEach(it=>extra.push({...it}));
  const order=pc?[...extra,...ph1,...nomi,...ph2,...pcr]:[...extra,...nomi,...ph1,...ph2,...pcr];
  const norm=s=>s.toLowerCase().replace(/[^a-z0-9가-힣]/g,'');
- const out=[];for(const x of order){if(!isFinite(x.lat)||!isFinite(x.lng))continue;
+ const out=[];for(const x of order){if(!isFinite(x.lat)||!isFinite(x.lng)||(box&&!inBox(x)))continue;
   if(out.some(y=>(norm(y.name)===norm(x.name)&&dist([y.lat,y.lng],[x.lat,x.lng])<500)||(dist([y.lat,y.lng],[x.lat,x.lng])<80&&(norm(y.name).includes(norm(x.name))||norm(x.name).includes(norm(y.name))))||(x.name.startsWith('우편번호')&&dist([y.lat,y.lng],[x.lat,x.lng])<60)))continue;out.push(x);}
- return {en,list:out.slice(0,6)};}
+ return {en,list:out.slice(0,box?8:6)};}
 const BRAND_EXTRA={Thistle:[{name:'The Tower Hotel (by Thistle)',addr:"St Katharine's Way, E1W 1LD, London",lat:51.50662,lng:-0.07328}]};
 
-$('#sform').onsubmit=async e=>{e.preventDefault();const q=$('#q').value.trim();if(!q)return;$('#q').blur();
- if(Date.now()-lastQ<1200){toast('잠시 후 다시 검색해 주세요');return;}lastQ=Date.now();
- const r=$('#results');r.hidden=false;r.innerHTML='<div class="rnote">검색 중이에요…</div>';
- try{const {en,list}=await smartSearch(q);
-  searchLayer.clearLayers();lastRes=list;
+let lastText='',searchCenter=null,searchZoom=null;
+async function runSearch(q,area){
+ if(Date.now()-lastQ<1200){toast('잠시 후 다시 검색해 주세요');return;}lastQ=Date.now();$('#areabtn').hidden=true;
+ const r=$('#results');r.hidden=false;r.innerHTML=`<div class="rnote">${area?'이 지역에서 ':''}검색 중이에요…</div>`;
+ let box=null;if(area){const b=map.getBounds();box=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()];}
+ try{const {en,list}=await smartSearch(q,box);
+  searchLayer.clearLayers();lastRes=list;lastText=q;
   const tr=hasKo(q)&&en&&en!==q?`<div class="rnote" style="padding:8px 12px 0">"${esc(en)}"(으)로 바꿔서 찾았어요</div>`:'';
-  if(!list.length){r.innerHTML=tr+'<div class="rnote">결과가 없어요. 호텔 영어 이름, 거리 이름이나 우편번호(예: E1W 1LD)로 검색해 보세요.</div>';return;}
-  r.innerHTML=`<div class="rhead">검색 결과 ${list.length}개 · 눌러서 위치 보기<button type="button" id="clr">닫기</button></div>`+tr+list.map((x,i)=>`<button class="res" data-i="${i}"><span class="n">${i+1}</span><div><b>${esc(x.name)}</b><span>${esc(x.addr)}</span></div></button>`).join('');
+  if(!list.length){r.innerHTML=tr+`<div class="rnote">${area?'지금 보이는 지역에는 결과가 없어요. 지도를 옮기거나 축소한 뒤 다시 눌러 보세요.':'결과가 없어요. 호텔 영어 이름, 거리 이름이나 우편번호(예: E1W 1LD)로 검색해 보세요.'}</div>`;searchCenter=map.getCenter();searchZoom=map.getZoom();return;}
+  r.innerHTML=`<div class="rhead">${area?'이 지역 ':''}검색 결과 ${list.length}개 · 눌러서 위치 보기<button type="button" id="clr">닫기</button></div>`+tr+list.map((x,i)=>`<button class="res" data-i="${i}"><span class="n">${i+1}</span><div><b>${esc(x.name)}</b><span>${esc(x.addr)}</span></div></button>`).join('');
   const pts=[];
   list.forEach((x,i)=>{const ll=[x.lat,x.lng];pts.push(ll);
    x._m=L.marker(ll,{icon:pinIcon('#17201d',String(i+1),null,true),zIndexOffset:1200}).bindPopup(card({title:x.name,kind:esc(x.addr),ll,save:x.name}),{maxWidth:320}).addTo(searchLayer);});
-  const near=pts.filter(p=>dist(p,pts[0])<4000);
-  fitPts(near.length?near:pts,16,false,isPhone()?Math.round(r.getBoundingClientRect().bottom)+20:0);
+  if(!area){const near=pts.filter(p=>dist(p,pts[0])<4000);fitPts(near.length?near:pts,16,false,isPhone()?Math.round(r.getBoundingClientRect().bottom)+20:0);}
+  searchCenter=map.getCenter();searchZoom=map.getZoom();
   r.querySelectorAll('.res').forEach(b=>b.onclick=()=>{const x=list[+b.dataset.i];if(isPhone())r.hidden=true;focusOn([x.lat,x.lng],17,()=>x._m.openPopup());});
   $('#clr').onclick=()=>{r.hidden=true;};
- }catch(err){r.innerHTML='<div class="rnote">검색 서버에 연결하지 못했어요. 잠시 후 다시 해 주세요.</div>';}};
+ }catch(err){r.innerHTML='<div class="rnote">검색 서버에 연결하지 못했어요. 잠시 후 다시 해 주세요.</div>';}}
+$('#sform').onsubmit=e=>{e.preventDefault();const q=$('#q').value.trim();if(!q)return;$('#q').blur();runSearch(q,false);};
+/* 지도를 옮기면 "이 지역에서 다시 검색" 버튼 */
+map.on('moveend',()=>{if(!lastText||!searchCenter)return;const moved=map.latLngToContainerPoint(searchCenter).distanceTo(map.getSize().divideBy(2))>map.getSize().x*0.25||map.getZoom()!==searchZoom;$('#areabtn').hidden=!moved;});
+$('#areabtn').onclick=()=>{const q=$('#q').value.trim()||lastText;if(q)runSearch(q,true);};
 
 /* ===== 패널 · 시트 ===== */
 const panel=$('#panel');let sheet='peek';let curTab='plan';
@@ -621,6 +641,10 @@ function focusOn(ll,z,after){closePop();
 function fitPts(pts,maxZoom,animate,topPad){map.fitBounds(pts,{paddingTopLeft:[40,topPad||(isPhone()?80:40)],paddingBottomRight:[isPhone()?70:90,40+sheetH()],maxZoom,animate:!!animate&&!isPhone()});}
 function showTab(t){curTab=t;['plan','pins','guide'].forEach(k=>{$('#t-'+k).setAttribute('aria-selected',k===t);$('#v-'+k).hidden=k!==t;});}
 ['plan','pins','guide'].forEach(k=>$('#t-'+k).onclick=()=>{closeCard();showTab(k);if(isPhone()&&sheet==='peek')setSheet('half');});
+
+/* PC: 왼쪽 패널 접기/펴기 */
+$('#pcol').onclick=()=>{const c=$('#app').classList.toggle('collapsed');$('#pcol').textContent=c?'›':'‹';$('#pcol').setAttribute('aria-label',c?'왼쪽 패널 펴기':'왼쪽 패널 접기');$('#pcol').title=c?'패널 펴기':'패널 접기';setTimeout(()=>map.invalidateSize({pan:false}),450);};
+$('#panel').addEventListener('transitionend',e=>{if(e.propertyName==='width')map.invalidateSize({pan:false});});
 
 /* 지도 설정 창 */
 function closePop(){$('#pop').hidden=true;$('#b-set').setAttribute('aria-expanded','false');}
@@ -658,7 +682,7 @@ $('#v-guide').innerHTML=`
  <li>같은 카드를 계속 쓰면 하루 요금 <b>상한(cap)</b>이 자동 적용돼서, 많이 타도 일정 금액 이상 안 나가요.</li></ul></details>
 <details><summary>지하철(Tube) 타는 법</summary><ul>
  <li>런던 지하철은 <b>노선 이름 + 방향</b>으로 찾아요. 예: "Central line, Eastbound".</li>
- <li>지도 위 노선을 누르면 그 노선만 진하게 보여요.</li>
+ <li>지도 위 노선을 누르면 그 노선만 보여요. 여러 노선이 겹친 곳을 누르면 겹친 노선이 함께 보여요. 한 번 더 누르면 전체로 돌아가요.</li>
  <li>에스컬레이터는 <b>오른쪽에 서기</b>, 왼쪽은 걷는 줄이에요.</li>
  <li>"Mind the gap" = 열차와 승강장 사이 틈 조심.</li>
  <li>보라색 <b>Elizabeth line</b>은 새 노선이라 빠르고 넓어요. 같은 카드로 타면 돼요.</li>
