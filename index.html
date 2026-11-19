@@ -143,12 +143,15 @@ details li{font-size:13px;line-height:1.65}
 
 /* ---------- 지도 안 표시 ---------- */
 .leaflet-div-icon{background:none;border:none}
-.pinlab{position:absolute;left:34px;top:4px;background:#fff;color:#17201d;font-size:12.5px;font-weight:800;border-radius:6px;padding:2px 7px;box-shadow:0 1px 4px rgba(0,0,0,.3);white-space:nowrap;font-family:var(--font)}
+.pinlab{position:absolute;left:34px;top:6px;background:#fff;color:#17201d;font-size:11px;font-weight:700;border-radius:5px;padding:1px 6px;box-shadow:0 1px 4px rgba(0,0,0,.3);white-space:nowrap;font-family:var(--font)}
 .lmk-lab{font-family:var(--font);font-size:11.5px;font-weight:700;color:#5b3d8a;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff,0 0 3px #fff;white-space:nowrap;position:absolute;left:10px;top:-8px}
 .st-tip{font-family:var(--font);font-size:11px;font-weight:700;padding:1px 5px;background:rgba(255,255,255,.9);border-radius:4px;color:#222;position:absolute;left:7px;top:-9px;white-space:nowrap}
 .hide-lmk .lmk-lab{display:none}
 .hide-lmkdot .lmkdot{display:none}
 .hide-sm .pinlab.sm{display:none}
+.zo .bigpin .pinlab,.zo .pinlab.sm{display:none}
+.zo .bigpin svg{transform:scale(.72);transform-origin:50% 100%}
+.zo2 .bigpin svg{transform:scale(.6)}
 .leaflet-popup-content-wrapper{border-radius:14px}
 .leaflet-popup-content{font-family:var(--font);font-size:13px;line-height:1.55;margin:13px 15px;min-width:220px}
 .pp h4{margin:0;font-size:16px;line-height:1.35}
@@ -190,6 +193,7 @@ details li{font-size:13px;line-height:1.65}
   #pop{position:fixed;z-index:1200;left:10px;right:10px;width:auto;top:calc(var(--top) + 56px);max-height:calc(100dvh - var(--sheet) - var(--top) - 70px)}
   #hlbar{top:calc(var(--top) + 58px)}
   .leaflet-control-zoom,.leaflet-control-scale{display:none}
+  .pinlab{font-size:10.5px}
   .leaflet-bottom{bottom:var(--sheet)}
 }
 @media (min-width:768px){ .fab2{display:contents} .fab2 .fbtn{margin:0} }
@@ -386,7 +390,7 @@ function dist(a,b){const R=6371000,t=Math.PI/180;const x=(b[1]-a[1])*t*Math.cos(
 /* ===== 지하철 노선 (겹치는 구간은 나란히) ===== */
 map.createPane('lines');map.getPane('lines').style.zIndex=410;
 map.createPane('stations');map.getPane('stations').style.zIndex=420;
-const lineR=L.canvas({pane:'lines',padding:.3,tolerance:7}),stR=L.canvas({pane:'stations',padding:.3,tolerance:6});
+const lineR=L.canvas({pane:'lines',padding:.3,tolerance:matchMedia('(max-width:767px)').matches?14:7}),stR=lineR; /* 한 캔버스에 같이 그려야 노선 터치가 됨 */
 const lineLayer=L.layerGroup().addTo(map);const polys=[];let hl=null;
 const groups={};D.segs.forEach(s=>{const k=JSON.stringify(s.c);(groups[k]=groups[k]||[]).push(s.l)});
 const order=Object.keys(COL);
@@ -398,11 +402,12 @@ Object.entries(groups).forEach(([k,ls])=>{const c=thin(JSON.parse(k),45);if(c.le
   p.on('click',e=>{L.DomEvent.stop(e);highlight(hl===l?null:l);});p.addTo(lineLayer);polys.push(p);});});
 let lastSty='';
 function styleAll(force){const v=+$('#r-op').value,w=lineW(),key=v+'|'+w+'|'+hl;$('#opv').textContent=v+'%';if(!force&&key===lastSty)return;const wChanged=!lastSty||lastSty.split('|')[1]!=String(w);lastSty=key;
- polys.forEach(p=>{p.setStyle({opacity:hl?(p._ln===hl?1:.08):v/100,weight:p._ln===hl?w+1.5:w});if(wChanged)p.setOffset((p._i-(p._n-1)/2)*w);});}
+ polys.forEach(p=>{const on=!hl||p._ln===hl;p.options.interactive=on;p.setStyle({opacity:hl?(on?1:0):v/100,weight:p._ln===hl?w+1.5:w});if(wChanged)p.setOffset((p._i-(p._n-1)/2)*w);});
+ stMarks.forEach(m=>{const on=!hl||m._lines.includes(hl);m.options.interactive=on;m.setStyle({opacity:on?1:0,fillOpacity:on?1:0});});}
 function applyOp(){styleAll();}
 function restyle(){styleAll();}
 function highlight(l){hl=l;const b=$('#hlbar');b.hidden=!l;if(l)b.textContent=`${SHORT[l]||l} 노선만 보는 중 · 모두 보기 ✕`;
- document.querySelectorAll('#legend button').forEach(x=>x.classList.toggle('on',x.dataset.l===l));restyle();}
+ document.querySelectorAll('#legend button').forEach(x=>x.classList.toggle('on',x.dataset.l===l));restyle();drawStLabels();}
 $('#hlbar').onclick=()=>highlight(null);
 $('#r-op').oninput=applyOp;
 $('#legend').innerHTML=Object.entries(COL).map(([k,c])=>`<button data-l="${esc(k)}"><i style="background:${c}"></i>${esc(SHORT[k]||k)}</button>`).join('');
@@ -413,11 +418,11 @@ const stLayer=L.layerGroup().addTo(map);const STN={};const stMarks=[];
 D.st.forEach(s=>{if(!STN[s.n])STN[s.n]={n:s.n,p:s.p,l:new Set()};s.l.forEach(x=>STN[s.n].l.add(x));});
 const STATIONS=Object.values(STN).map(s=>({...s,l:[...s.l]}));
 const lineTxt=l=>`<span style="color:${l==='Circle'?'#a88a00':COL[l]};font-weight:700">${esc(SHORT[l]||l)}</span>`;
-STATIONS.forEach(s=>{const m=L.circleMarker(s.p,{pane:'stations',renderer:stR,radius:3.4,color:'#3a3f3c',weight:1.4,fillColor:'#fff',fillOpacity:1})
- .bindPopup(()=>card({title:s.n+' 역',kind:s.l.map(lineTxt).join(' · '),ll:s.p,near:false,save:s.n+' 역'})).addTo(stLayer);stMarks.push(m);});
+STATIONS.forEach(s=>{const m=L.circleMarker(s.p,{pane:'lines',renderer:stR,radius:3.4,color:'#3a3f3c',weight:1.4,fillColor:'#fff',fillOpacity:1})
+ .bindPopup(()=>card({title:s.n+' 역',kind:s.l.map(lineTxt).join(' · '),ll:s.p,near:false,save:s.n+' 역'})).addTo(stLayer);m._lines=s.l;stMarks.push(m);});
 const stLab=L.layerGroup().addTo(map);
 function drawStLabels(){stLab.clearLayers();if(map.getZoom()<15||!map.hasLayer(stLayer))return;const b=map.getBounds().pad(.1);
- STATIONS.forEach(s=>{if(b.contains(s.p))L.marker(s.p,{interactive:false,keyboard:false,icon:L.divIcon({className:'',iconSize:[0,0],html:`<div class="st-tip">${esc(s.n)}</div>`})}).addTo(stLab);});}
+ STATIONS.forEach(s=>{if(b.contains(s.p)&&(!hl||s.l.includes(hl)))L.marker(s.p,{interactive:false,keyboard:false,icon:L.divIcon({className:'',iconSize:[0,0],html:`<div class="st-tip">${esc(s.n)}</div>`})}).addTo(stLab);});}
 map.on('moveend',drawStLabels);
 
 /* ===== 가까운 역 ===== */
@@ -437,13 +442,13 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-pin],[data
  if(b.dataset.pin){const [n,a,o,c]=JSON.parse(b.dataset.pin);addPin(n,a,o,c);}else if(b.dataset.del)delPin(b.dataset.del);else{closeCard();showTab(b.dataset.tab);if(isPhone())setSheet('half');}});
 
 /* 핀 아이콘 */
-function pinIcon(color,txt,label,small){const w=small?28:36,h=small?37:47;
- return L.divIcon({className:'',iconSize:[w,h],iconAnchor:[w/2,h-1],popupAnchor:[0,-h+6],
-  html:`<svg width="${w}" height="${h}" viewBox="0 0 40 52"><path d="M20 51C20 51 38 30 38 19A18 18 0 0 0 2 19C2 30 20 51 20 51Z" fill="${color}" stroke="#fff" stroke-width="2.5"/><text x="20" y="25.5" font-size="${txt.length>1?13:17}" font-weight="800" fill="#fff" text-anchor="middle" font-family="Noto Sans KR,Apple SD Gothic Neo,sans-serif">${esc(txt)}</text></svg>`+(label?`<div class="pinlab${small?' sm':''}" style="left:${w-2}px;border-left:4px solid ${color}">${esc(label)}</div>`:'')});}
+function pinIcon(color,txt,label,small,cls){const w=small?28:36,h=small?37:47;
+ return L.divIcon({className:cls||'',iconSize:[w,h],iconAnchor:[w/2,h-1],popupAnchor:[0,-h+6],
+  html:`<svg width="${w}" height="${h}" viewBox="0 0 40 52"><path d="M20 51C20 51 38 30 38 19A18 18 0 0 0 2 19C2 30 20 51 20 51Z" fill="${color}" stroke="#fff" stroke-width="2.5"/><text x="20" y="25.5" font-size="${txt.length>1?12:15}" font-weight="800" fill="#fff" text-anchor="middle" font-family="Noto Sans KR,Apple SD Gothic Neo,sans-serif">${esc(txt)}</text></svg>`+(label?`<div class="pinlab${small?' sm':''}" style="left:${w-2}px;border-left:4px solid ${color}">${esc(label)}</div>`:'')});}
 
 /* ===== 일정 핀 ===== */
 const planMarkers={};
-PLAN.filter(p=>p.ll).forEach(p=>{planMarkers[p.id]=L.marker(p.ll,{icon:pinIcon(p.color,p.d,p.title),zIndexOffset:1000}).addTo(map)
+PLAN.filter(p=>p.ll).forEach(p=>{planMarkers[p.id]=L.marker(p.ll,{icon:pinIcon(p.color,p.d,p.title,false,'bigpin'),zIndexOffset:1000}).addTo(map)
  .bindPopup(card({title:p.title,kind:p.date+' 공식 일정',kindColor:p.color,body:p.how,ll:p.ll}),{maxWidth:320});});
 PLACES.forEach(p=>{L.marker(p.ll,{icon:pinIcon(p.color,p.d,p.name,true),zIndexOffset:800}).addTo(map)
  .bindPopup(card({title:p.name,body:p.note,ll:p.ll,near:false}),{maxWidth:300});});
@@ -457,7 +462,7 @@ LMK.forEach(([n,a,o,t,c])=>{
 $('#c-lmk').onchange=e=>{e.target.checked?lmkLayer.addTo(map):map.removeLayer(lmkLayer);};
 $('#c-lines').onchange=e=>{if(e.target.checked){lineLayer.addTo(map);stLayer.addTo(map);}else{map.removeLayer(lineLayer);map.removeLayer(stLayer);if(hl)highlight(null);}drawStLabels();};
 
-function zoomClass(){const z=map.getZoom(),c=map.getContainer().classList;c.toggle('hide-lmk',z<15);c.toggle('hide-sm',z<13);c.toggle('hide-lmkdot',z<13);
+function zoomClass(){const z=map.getZoom(),c=map.getContainer().classList;c.toggle('hide-lmk',z<15);c.toggle('hide-sm',z<13);c.toggle('hide-lmkdot',z<13);c.toggle('zo',z<14);c.toggle('zo2',z<12);
  const r=z<12?2:z<14?3:4.5;if(r!==zoomClass.r){zoomClass.r=r;stMarks.forEach(m=>m.setRadius(r));}if(z<11)map.removeLayer(stLayer);else if($('#c-lines').checked&&!map.hasLayer(stLayer))stLayer.addTo(map);restyle();}
 map.on('zoomend',zoomClass);
 
