@@ -207,7 +207,7 @@ details li{font-size:13px;line-height:1.65}
     <div id="searchbox">
       <form class="search" id="sform" autocomplete="off" role="search">
         <svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="q" type="search" enterkeyhint="search" placeholder="호텔·장소 검색 (영어 이름으로)" aria-label="호텔이나 장소 검색">
+        <input id="q" type="search" enterkeyhint="search" placeholder="호텔·장소·주소 검색 (한국어도 OK)" aria-label="호텔이나 장소 검색">
         <button type="button" id="qclr" aria-label="검색어 지우기" hidden>×</button>
       </form>
       <div id="results" hidden></div>
@@ -247,7 +247,7 @@ details li{font-size:13px;line-height:1.65}
         </div></div>
       <div class="grp"><h4>지도에 표시</h4>
         <label class="sw">지하철 노선·역<input type="checkbox" id="c-lines" checked></label>
-        <label class="sw">관광지<input type="checkbox" id="c-lmk" checked></label></div>
+        <label class="sw">관광지<input type="checkbox" id="c-lmk"></label></div>
       <div class="grp slider"><div class="top"><span>노선 선명도</span><span id="opv">75%</span></div>
         <input type="range" id="r-op" min="10" max="100" step="5" value="75" aria-label="노선 선명도">
         <div class="ends"><span>흐리게</span><span>진하게</span></div></div>
@@ -376,12 +376,13 @@ map.attributionControl.addAttribution('노선 데이터: TfL (oobrien/vis)');
 function setBase(mode){
  Object.values(BASES).forEach(l=>l&&map.removeLayer(l));
  try{
-  if(mode==='vec'&&!BASES.vec)BASES.vec=L.maplibreGL({style:'https://tiles.openfreemap.org/styles/liberty',attribution:'<a href="https://openfreemap.org">OpenFreeMap</a> © OpenMapTiles © OpenStreetMap'});
+  if(mode==='vec'&&!BASES.vec)BASES.vec=L.maplibreGL({style:'https://tiles.openfreemap.org/styles/liberty',fadeDuration:0,pixelRatio:Math.min(devicePixelRatio||1,2),attribution:'<a href="https://openfreemap.org">OpenFreeMap</a> © OpenMapTiles © OpenStreetMap'});
   BASES[mode].addTo(map);
  }catch(e){if(mode!=='simple'){toast('기본 1 지도를 열 수 없어 기본 2로 바꿨어요');setBase('simple');}return;}
  document.querySelectorAll('.base').forEach(b=>b.setAttribute('aria-pressed',b.dataset.base===mode));}
 document.querySelectorAll('.base').forEach(b=>b.onclick=()=>setBase(b.dataset.base));
 
+function dist(a,b){const R=6371000,t=Math.PI/180;const x=(b[1]-a[1])*t*Math.cos((a[0]+b[0])/2*t),y=(b[0]-a[0])*t;return Math.sqrt(x*x+y*y)*R;}
 /* ===== 지하철 노선 (겹치는 구간은 나란히) ===== */
 map.createPane('lines');map.getPane('lines').style.zIndex=410;
 map.createPane('stations');map.getPane('stations').style.zIndex=420;
@@ -389,12 +390,17 @@ const lineR=L.canvas({pane:'lines',padding:.3,tolerance:7}),stR=L.canvas({pane:'
 const lineLayer=L.layerGroup().addTo(map);const polys=[];let hl=null;
 const groups={};D.segs.forEach(s=>{const k=JSON.stringify(s.c);(groups[k]=groups[k]||[]).push(s.l)});
 const order=Object.keys(COL);
-function lineW(){const z=map.getZoom();return z>=17?8:z>=15?6.5:z>=13?4.5:z>=11?3.5:2.5;}
-Object.entries(groups).forEach(([k,ls])=>{const c=JSON.parse(k);ls=[...new Set(ls)].sort((a,b)=>order.indexOf(a)-order.indexOf(b));
- ls.forEach((l,i)=>{const p=L.polyline(c,{pane:'lines',renderer:lineR,color:COL[l],weight:lineW(),offset:(i-(ls.length-1)/2)*lineW(),lineCap:'round'});p._ln=l;p._i=i;p._n=ls.length;
+function lineW(){const z=map.getZoom();return isPhone()?(z>=17?4.5:z>=15?3.5:z>=13?2.6:z>=11?2:1.5):(z>=17?6.5:z>=15?5:z>=13?3.6:z>=11?2.8:2);}
+/* 너무 촘촘한 점은 솎아냄 → 노선을 나란히 벌릴 때 작은 고리(점처럼 보이는 것)가 생기지 않게 */
+function thin(c,minM){const out=[c[0]];for(let i=1;i<c.length-1;i++){if(dist(out[out.length-1],c[i])>=minM)out.push(c[i]);}const last=c[c.length-1];if(out.length>1&&dist(out[out.length-1],last)<minM*0.5)out.pop();out.push(last);return out;}
+Object.entries(groups).forEach(([k,ls])=>{const c=thin(JSON.parse(k),45);if(c.length<2||(c[0][0]===c[1][0]&&c[0][1]===c[1][1]))return;ls=[...new Set(ls)].sort((a,b)=>order.indexOf(a)-order.indexOf(b));
+ ls.forEach((l,i)=>{const p=L.polyline(c,{pane:'lines',renderer:lineR,color:COL[l],weight:lineW(),offset:(i-(ls.length-1)/2)*lineW(),lineCap:'butt',lineJoin:'round'});p._ln=l;p._i=i;p._n=ls.length;
   p.on('click',e=>{L.DomEvent.stop(e);highlight(hl===l?null:l);});p.addTo(lineLayer);polys.push(p);});});
-function applyOp(){const v=+$('#r-op').value;$('#opv').textContent=v+'%';polys.forEach(p=>p.setStyle({opacity:hl?(p._ln===hl?1:.08):v/100}));}
-function restyle(){const w=lineW();polys.forEach(p=>{p.setStyle({weight:p._ln===hl?w+1.5:w});p.setOffset((p._i-(p._n-1)/2)*w);});applyOp();}
+let lastSty='';
+function styleAll(force){const v=+$('#r-op').value,w=lineW(),key=v+'|'+w+'|'+hl;$('#opv').textContent=v+'%';if(!force&&key===lastSty)return;const wChanged=!lastSty||lastSty.split('|')[1]!=String(w);lastSty=key;
+ polys.forEach(p=>{p.setStyle({opacity:hl?(p._ln===hl?1:.08):v/100,weight:p._ln===hl?w+1.5:w});if(wChanged)p.setOffset((p._i-(p._n-1)/2)*w);});}
+function applyOp(){styleAll();}
+function restyle(){styleAll();}
 function highlight(l){hl=l;const b=$('#hlbar');b.hidden=!l;if(l)b.textContent=`${SHORT[l]||l} 노선만 보는 중 · 모두 보기 ✕`;
  document.querySelectorAll('#legend button').forEach(x=>x.classList.toggle('on',x.dataset.l===l));restyle();}
 $('#hlbar').onclick=()=>highlight(null);
@@ -415,7 +421,7 @@ function drawStLabels(){stLab.clearLayers();if(map.getZoom()<15||!map.hasLayer(s
 map.on('moveend',drawStLabels);
 
 /* ===== 가까운 역 ===== */
-function dist(a,b){const R=6371000,t=Math.PI/180;const x=(b[1]-a[1])*t*Math.cos((a[0]+b[0])/2*t),y=(b[0]-a[0])*t;return Math.sqrt(x*x+y*y)*R;}
+
 function nearest(ll,n=3){return STATIONS.map(s=>({s,d:dist(ll,s.p)})).sort((a,b)=>a.d-b.d).slice(0,n);}
 function walkMin(d){return Math.max(1,Math.round(d*1.3/80));}
 function nearHTML(ll,n=3){const r=nearest(ll,n);
@@ -444,7 +450,7 @@ PLACES.forEach(p=>{L.marker(p.ll,{icon:pinIcon(p.color,p.d,p.name,true),zIndexOf
 L.polyline([[51.51710,-0.17732],[51.75345,-1.26995]],{color:'#0f8a74',weight:3,dashArray:'2 8',opacity:.8}).bindTooltip('목: Paddington → 옥스퍼드 기차 약 1시간 (방향만 표시)',{sticky:true}).addTo(map);
 
 /* ===== 관광지 (한 가지 표시로 단순하게) ===== */
-const lmkLayer=L.layerGroup().addTo(map);
+const lmkLayer=L.layerGroup();
 LMK.forEach(([n,a,o,t,c])=>{
  L.marker([a,o],{icon:L.divIcon({className:'lmkdot',iconSize:[14,14],iconAnchor:[7,7],html:`<div style="width:13px;height:13px;border-radius:50%;background:#fff;border:3px solid var(--lmk)"></div><div class="lmk-lab">${esc(n)}</div>`})})
  .bindPopup(card({title:n,kind:'관광지 · '+LCAT[c].n,kindColor:'#7b4fb5',body:esc(t),ll:[a,o],save:n}),{maxWidth:310}).addTo(lmkLayer);});
@@ -452,7 +458,7 @@ $('#c-lmk').onchange=e=>{e.target.checked?lmkLayer.addTo(map):map.removeLayer(lm
 $('#c-lines').onchange=e=>{if(e.target.checked){lineLayer.addTo(map);stLayer.addTo(map);}else{map.removeLayer(lineLayer);map.removeLayer(stLayer);if(hl)highlight(null);}drawStLabels();};
 
 function zoomClass(){const z=map.getZoom(),c=map.getContainer().classList;c.toggle('hide-lmk',z<15);c.toggle('hide-sm',z<13);c.toggle('hide-lmkdot',z<13);
- const r=z<12?2:z<14?3:4.5;stMarks.forEach(m=>m.setRadius(r));restyle();}
+ const r=z<12?2:z<14?3:4.5;if(r!==zoomClass.r){zoomClass.r=r;stMarks.forEach(m=>m.setRadius(r));}if(z<11)map.removeLayer(stLayer);else if($('#c-lines').checked&&!map.hasLayer(stLayer))stLayer.addTo(map);restyle();}
 map.on('zoomend',zoomClass);
 
 /* ===== 내 장소 (이 기기에 저장 + 링크로 공유) ===== */
@@ -517,20 +523,64 @@ $('#q').addEventListener('input',()=>{$('#qclr').hidden=!$('#q').value;});
 $('#q').addEventListener('focus',()=>{closePop();if(lastRes.length)$('#results').hidden=false;});
 $('#qclr').onclick=()=>{$('#q').value='';$('#qclr').hidden=true;clearSearch();};
 function clearSearch(){$('#results').hidden=true;$('#results').innerHTML='';searchLayer.clearLayers();lastRes=[];}
+/* 한국어 → 영어 바꾸기 (호텔 브랜드·런던 지명·주소 단어) */
+const KO_EN=[['시티 오브 런던','City of London'],['타워햄리츠','Tower Hamlets'],['타워 햄리츠','Tower Hamlets'],['웨스트민스터','Westminster'],['켄싱턴 앤 첼시','Kensington and Chelsea'],['캠든','Camden'],['서더크','Southwark'],['사우스워크','Southwark'],['램버스','Lambeth'],['켄싱턴','Kensington'],['첼시','Chelsea'],['이즐링턴','Islington'],['해크니','Hackney'],
+ ['킹스크로스','Kings Cross'],['킹스 크로스','Kings Cross'],['세인트 판크라스','St Pancras'],['세인트판크라스','St Pancras'],['패딩턴','Paddington'],['빅토리아','Victoria'],['워털루','Waterloo'],['유스턴','Euston'],['리버풀 스트리트','Liverpool Street'],['런던 브리지','London Bridge'],['런던브리지','London Bridge'],['타워 브리지','Tower Bridge'],['타워브리지','Tower Bridge'],['타워힐','Tower Hill'],['타워 힐','Tower Hill'],['카나리 워프','Canary Wharf'],['카나리워프','Canary Wharf'],['쇼디치','Shoreditch'],['소호','Soho'],['코벤트 가든','Covent Garden'],['코벤트가든','Covent Garden'],['블룸즈버리','Bloomsbury'],['메릴본','Marylebone'],['마릴본','Marylebone'],['베이커 스트리트','Baker Street'],['옥스퍼드 스트리트','Oxford Street'],['옥스포드','Oxford'],['옥스퍼드','Oxford'],['하이드 파크','Hyde Park'],['사우스뱅크','South Bank'],['사우스 뱅크','South Bank'],['그리니치','Greenwich'],['스트랫퍼드','Stratford'],['얼스코트','Earls Court'],['얼스 코트','Earls Court'],['해머스미스','Hammersmith'],['노팅힐','Notting Hill'],['노팅 힐','Notting Hill'],['베이스워터','Bayswater'],['나이츠브리지','Knightsbridge'],['카운티 홀','County Hall'],['카운티홀','County Hall'],['히드로','Heathrow'],['피카딜리','Piccadilly'],['레스터 스퀘어','Leicester Square'],['트래펄가','Trafalgar'],['홀본','Holborn'],['알드게이트','Aldgate'],['와핑','Wapping'],['버몬지','Bermondsey'],['엘리펀트 앤 캐슬','Elephant and Castle'],
+ ['프리미어인','Premier Inn'],['프리미어 인','Premier Inn'],['트래블로지','Travelodge'],['트레블로지','Travelodge'],['홀리데이인','Holiday Inn'],['홀리데이 인','Holiday Inn'],['익스프레스','Express'],['이비스','ibis'],['노보텔','Novotel'],['머큐어','Mercure'],['힐튼','Hilton'],['더블트리','DoubleTree'],['햄프턴','Hampton'],['메리어트','Marriott'],['매리어트','Marriott'],['코트야드','Courtyard'],['시슬','Thistle'],['구오만','Guoman'],['파크 플라자','Park Plaza'],['파크플라자','Park Plaza'],['래디슨','Radisson'],['크라운 플라자','Crowne Plaza'],['크라운플라자','Crowne Plaza'],['인터컨티넨탈','InterContinental'],['레오나르도','Leonardo'],['시티즌엠','citizenM'],['시티즌 엠','citizenM'],['하얏트','Hyatt'],['하이엇','Hyatt'],['쉐라톤','Sheraton'],['셰라톤','Sheraton'],['웨스틴','Westin'],['제너레이터','Generator'],['클링크','Clink'],['세인트 크리스토퍼','St Christopher'],['호스텔','Hostel'],['호텔','Hotel'],['아파트먼트','Apartments'],
+ ['한국은행','Bank of Korea'],['국제해사기구','International Maritime Organization'],['대사관','Embassy'],['박물관','Museum'],['미술관','Gallery'],['갤러리','Gallery'],['대성당','Cathedral'],['궁전','Palace'],['대학교','University'],['칼리지','College'],['공원','Park'],['시장','Market'],['마켓','Market'],['광장','Square'],['식당','restaurant'],['카페','cafe'],
+ ['세인트','St'],['캐서린스','Katharine\'s'],['캐서린','Katharine'],['스트리트','Street'],['로드','Road'],['웨이','Way'],['스퀘어','Square'],['브리지','Bridge'],['파크','Park'],['가든스','Gardens'],['가든','Garden'],['플레이스','Place'],['레인','Lane'],['테라스','Terrace'],['애비뉴','Avenue'],['하이 스트리트','High Street'],['로열','Royal'],['로얄','Royal'],['그랜드','Grand'],['센트럴','Central'],['시티','City'],['노스','North'],['사우스','South'],['이스트','East'],['웨스트','West'],['리버','River'],['뱅크','Bank'],['타워','Tower'],['런던','London'],['영국','United Kingdom']];
+KO_EN.sort((a,b)=>b[0].length-a[0].length);
+const KO_WORD={'더':'The','바이':'by','인':'Inn','역':'station','앤':'and'};
+const hasKo=s=>/[가-힣]/.test(s);
+function toEnglish(q){let s=' '+q.replace(/[，、]/g,',')+' ';
+ for(const [k,v] of KO_EN)s=s.split(k).join(' '+v+' ');
+ s=s.split(/(\s+|,)/).map(w=>KO_WORD[w]!==undefined?KO_WORD[w]:w).join('');
+ return s.replace(/[가-힣]+/g,' ').replace(/\s+,/g,',').replace(/\s+/g,' ').replace(/^[\s,]+|[\s,]+$/g,'').trim();}
+const PC_RE=/\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b/i;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let nomiNext=0;
+async function nominatim(q){const w=nomiNext-Date.now();if(w>0)await sleep(w);nomiNext=Date.now()+1100;
+ const u='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=gb&bounded=1&accept-language=en&viewbox=-1.4,51.85,0.35,51.3&q='+encodeURIComponent(q);
+ const js=await (await fetch(u,{headers:{'Accept':'application/json'}})).json();
+ return js.map(x=>({name:x.name||x.display_name.split(',')[0],addr:x.display_name.split(',').slice(1,4).join(',').trim(),lat:+x.lat,lng:+x.lon}));}
+async function photon(q){const u='https://photon.komoot.io/api/?limit=6&lang=en&lat=51.507&lon=-0.12&bbox=-1.4,51.3,0.35,51.85&q='+encodeURIComponent(q);
+ const js=await (await fetch(u)).json();
+ return (js.features||[]).map(f=>{const p=f.properties;const street=[p.housenumber,p.street].filter(Boolean).join(' ');
+  return {name:p.name||street||p.postcode||q,addr:[p.name?street:'',p.postcode,p.city||p.district].filter(Boolean).join(', '),lat:f.geometry.coordinates[1],lng:f.geometry.coordinates[0]};});}
+async function postcode(pc){const r=await (await fetch('https://api.postcodes.io/postcodes/'+encodeURIComponent(pc))).json();
+ return r&&r.result?[{name:'우편번호 '+r.result.postcode,addr:[r.result.admin_district,'London'].filter(Boolean).join(', '),lat:r.result.latitude,lng:r.result.longitude}]:[];}
+const safe=p=>p.catch(()=>[]);
+async function smartSearch(q){
+ const en=toEnglish(q)||q;const pcm=en.match(PC_RE)||q.match(PC_RE);const pc=pcm?(pcm[1]+' '+pcm[2]).toUpperCase():null;
+ const v1=en.replace(/,?\s*United Kingdom\b/i,'').trim();
+ const v2=v1.replace(/\s+by\s+.+$/i,'').trim();
+ const street=pc?v1.split(',')[0].trim():'';
+ const pPh=Promise.all([safe(photon(v1)),v2!==v1?safe(photon(v2)):[] ,pc?safe(postcode(pc)):[]]);
+ let nomi=[];for(const v of [...new Set([v1,v2,pc&&street&&street!==pc?street+', '+pc:null].filter(Boolean))]){nomi=await safe(nominatim(v));if(nomi.length)break;}
+ const [ph1,ph2,pcr]=await pPh;
+ /* 지도 데이터에 브랜드명이 빠진 호텔 보완 (예: The Tower Hotel, by Thistle) */
+ const extra=[];for(const [brand,items] of Object.entries(BRAND_EXTRA))if(new RegExp('\\b'+brand+'\\b','i').test(en))items.forEach(it=>extra.push({...it}));
+ const order=pc?[...extra,...ph1,...nomi,...ph2,...pcr]:[...extra,...nomi,...ph1,...ph2,...pcr];
+ const norm=s=>s.toLowerCase().replace(/[^a-z0-9가-힣]/g,'');
+ const out=[];for(const x of order){if(!isFinite(x.lat)||!isFinite(x.lng))continue;
+  if(out.some(y=>(norm(y.name)===norm(x.name)&&dist([y.lat,y.lng],[x.lat,x.lng])<500)||(dist([y.lat,y.lng],[x.lat,x.lng])<80&&(norm(y.name).includes(norm(x.name))||norm(x.name).includes(norm(y.name))))||(x.name.startsWith('우편번호')&&dist([y.lat,y.lng],[x.lat,x.lng])<60)))continue;out.push(x);}
+ return {en,list:out.slice(0,6)};}
+const BRAND_EXTRA={Thistle:[{name:'The Tower Hotel (by Thistle)',addr:"St Katharine's Way, E1W 1LD, London",lat:51.50662,lng:-0.07328}]};
+
 $('#sform').onsubmit=async e=>{e.preventDefault();const q=$('#q').value.trim();if(!q)return;$('#q').blur();
- if(Date.now()-lastQ<1100){toast('잠시 후 다시 검색해 주세요');return;}lastQ=Date.now();
+ if(Date.now()-lastQ<1200){toast('잠시 후 다시 검색해 주세요');return;}lastQ=Date.now();
  const r=$('#results');r.hidden=false;r.innerHTML='<div class="rnote">검색 중이에요…</div>';
- try{const u='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=gb&accept-language=ko,en&viewbox=-1.4,51.85,0.35,51.3&q='+encodeURIComponent(q);
-  const js=await (await fetch(u,{headers:{'Accept':'application/json'}})).json();
-  searchLayer.clearLayers();lastRes=js;
-  if(!js.length){r.innerHTML='<div class="rnote">결과가 없어요. 영어 이름으로, 또는 뒤에 "London"을 붙여서 다시 검색해 보세요.</div>';return;}
-  const nm=x=>x.name||x.display_name.split(',')[0], addr=x=>x.display_name.split(',').slice(1,4).join(',');
-  r.innerHTML=`<div class="rhead">검색 결과 ${js.length}개 · 눌러서 위치 보기<button type="button" id="clr">닫기</button></div>`+js.map((x,i)=>`<button class="res" data-i="${i}"><span class="n">${i+1}</span><div><b>${esc(nm(x))}</b><span>${esc(addr(x))}</span></div></button>`).join('');
+ try{const {en,list}=await smartSearch(q);
+  searchLayer.clearLayers();lastRes=list;
+  const tr=hasKo(q)&&en&&en!==q?`<div class="rnote" style="padding:8px 12px 0">"${esc(en)}"(으)로 바꿔서 찾았어요</div>`:'';
+  if(!list.length){r.innerHTML=tr+'<div class="rnote">결과가 없어요. 호텔 영어 이름, 거리 이름이나 우편번호(예: E1W 1LD)로 검색해 보세요.</div>';return;}
+  r.innerHTML=`<div class="rhead">검색 결과 ${list.length}개 · 눌러서 위치 보기<button type="button" id="clr">닫기</button></div>`+tr+list.map((x,i)=>`<button class="res" data-i="${i}"><span class="n">${i+1}</span><div><b>${esc(x.name)}</b><span>${esc(x.addr)}</span></div></button>`).join('');
   const pts=[];
-  js.forEach((x,i)=>{const ll=[+x.lat,+x.lon];pts.push(ll);
-   x._m=L.marker(ll,{icon:pinIcon('#17201d',String(i+1),null,true),zIndexOffset:1200}).bindPopup(card({title:nm(x),kind:esc(addr(x)),ll,save:nm(x)}),{maxWidth:320}).addTo(searchLayer);});
-  fitPts(pts,16,false,isPhone()?Math.round(r.getBoundingClientRect().bottom)+20:0);
-  r.querySelectorAll('.res').forEach(b=>b.onclick=()=>{const x=js[+b.dataset.i];if(isPhone())r.hidden=true;focusOn([+x.lat,+x.lon],17,()=>x._m.openPopup());});
+  list.forEach((x,i)=>{const ll=[x.lat,x.lng];pts.push(ll);
+   x._m=L.marker(ll,{icon:pinIcon('#17201d',String(i+1),null,true),zIndexOffset:1200}).bindPopup(card({title:x.name,kind:esc(x.addr),ll,save:x.name}),{maxWidth:320}).addTo(searchLayer);});
+  const near=pts.filter(p=>dist(p,pts[0])<4000);
+  fitPts(near.length?near:pts,16,false,isPhone()?Math.round(r.getBoundingClientRect().bottom)+20:0);
+  r.querySelectorAll('.res').forEach(b=>b.onclick=()=>{const x=list[+b.dataset.i];if(isPhone())r.hidden=true;focusOn([x.lat,x.lng],17,()=>x._m.openPopup());});
   $('#clr').onclick=()=>{r.hidden=true;};
  }catch(err){r.innerHTML='<div class="rnote">검색 서버에 연결하지 못했어요. 잠시 후 다시 해 주세요.</div>';}};
 
